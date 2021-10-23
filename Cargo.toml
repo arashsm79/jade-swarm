@@ -2,5 +2,5 @@
 authors = ["Arash Sal Moslehian <arashsm79@yahoo.com>"]
 edition = "2021"
 # If you change the name here, you must also do it in flake.nix
-name = "jadeswarm"
+name = "jade-swarm"
 version = "0.1.0"
