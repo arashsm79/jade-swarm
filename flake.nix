@@ -14,7 +14,7 @@
   outputs = { self, nixpkgs, utils, rust-overlay, crate2nix, ... }:
   let
       # If you change the name here, you must also do it in Cargo.toml
-      name = "Jade Swarm";
+      name = "jadeswarm";
       rustChannel = "stable";
     in
     utils.lib.eachSystem ["x86_64-linux"] 
