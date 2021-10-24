@@ -4,3 +4,6 @@ edition = "2021"
 # If you change the name here, you must also do it in flake.nix
 name = "jade-swarm"
 version = "0.1.0"
+
+[dependencies]
+rand = "0.8.0"
