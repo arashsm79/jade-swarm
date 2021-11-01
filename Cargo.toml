@@ -6,4 +6,5 @@ name = "jade-swarm"
 version = "0.1.0"
 
 [dependencies]
-rand = "0.8.0"
+rand = "0.8"
+bitvec = "0.22.3"
