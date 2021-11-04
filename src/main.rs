@@ -1,5 +1,7 @@
 use bitvec::prelude::*;
 use std::collections::{HashMap, VecDeque};
+use std::cmp::Ordering;
+use std::collections::BinaryHeap;
 
 struct JadeSwarm {
     graph: JadeGraph,
@@ -21,6 +23,25 @@ struct State {
     selected_node: usize, // which node was selected that lead to this state
 }
 
+// TODO make sure Ord is consistent with PartialOrd
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+struct Node {
+    state: State,
+    cost: i32
+}
+
+impl Ord for Node {
+    fn cmp(&self, other: &Self) -> Ordering {
+        other.cost.cmp(&self.cost)
+    }
+}
+
+impl PartialOrd for Node {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 enum StoneColor {
     Green,
     Red,
@@ -34,7 +55,7 @@ impl JadeSwarm {
             initial_state: State {
                 config: graph.initial_config.clone(),
                 blacks_pos: graph.initial_blacks_pos.clone(),
-                selected_node: 0
+                selected_node: 0,
             },
             graph,
         }
@@ -57,15 +78,13 @@ impl JadeSwarm {
         let graph = &self.graph;
 
         // TODO find a way to avoid cloning
+        config = (config ^ graph.adj_mat[selected_node].clone()) & current_state.blacks_pos.clone();
         match JadeSwarm::get_color(current_state, selected_node) {
             StoneColor::Red => {
-                config = (config ^ graph.adj_mat[selected_node].clone()) & current_state.blacks_pos.clone();
             },
             StoneColor::Green => {
-                config = (config ^ graph.adj_mat[selected_node].clone()) & current_state.blacks_pos.clone();
             },
             StoneColor::Black => {
-                config = (config ^ graph.adj_mat[selected_node].clone()) & current_state.blacks_pos.clone();
                 let neighbors_count = (graph.adj_mat[selected_node].clone() & current_state.blacks_pos.clone())
                     .iter().filter(|b| (*b)==true).count();
                 let green_neighbors_count = (config.clone() & (graph.adj_mat[selected_node].clone() & current_state.blacks_pos.clone()))
@@ -87,6 +106,97 @@ impl JadeSwarm {
        state.config.iter().filter(|b| (*b)==true).count() == state.config.len()
     }
 
+    fn a_star(&self) -> Option<Vec<State>> {
+
+        let g = |_state: &State| -> i32 {
+            1
+        };
+
+        // Consistent and admissible heuristic:
+        /*
+        * Negative of ((number of non-green nodes) / (maximum branching factor of graph))
+        */
+        let mut maximum_branching_factor = 0;
+        for adj_mat_row in &self.graph.adj_mat {
+            maximum_branching_factor = std::cmp::max(maximum_branching_factor, adj_mat_row.iter().filter(|b| (*b)==true).count());
+        }
+
+        let h = |state: &State| -> i32 {
+            let x = f64::from(state.config.len() as i32 - state.config.iter().filter(|b| (*b)==true).count() as i32) / maximum_branching_factor as f64;
+            x.ceil() as i32
+        };
+
+        self.best_first_search(g, h)
+    }
+
+    fn greedy_best_first_search(&self) -> Option<Vec<State>> {
+
+        let g = |_state: &State| -> i32 {
+            0
+        };
+
+        // Consistent and admissible heuristic:
+        /*
+        * Negative of ((number of non-green nodes) / (maximum branching factor of graph))
+        */
+        let mut maximum_branching_factor = 0;
+        for adj_mat_row in &self.graph.adj_mat {
+            maximum_branching_factor = std::cmp::max(maximum_branching_factor, adj_mat_row.iter().filter(|b| (*b)==true).count());
+        }
+
+        let h = |state: &State| -> i32 {
+            ((state.config.len() as i32) - (state.config.iter().filter(|b| (*b)==true).count()) as i32) / maximum_branching_factor as i32
+        };
+
+        self.best_first_search(g, h)
+    }
+
+    fn uniform_cost_search(&self) -> Option<Vec<State>> {
+
+        let g = |state: &State| -> i32 {
+            match JadeSwarm::get_color(&state, state.selected_node) {
+                StoneColor::Red =>  1,
+                StoneColor::Green =>  3,
+                StoneColor::Black =>  2,
+            }
+        };
+
+        let h = |_state: &State| -> i32 {
+            0
+        };
+
+        self.best_first_search(g, h)
+    }
+
+    fn best_first_search<F>(&self, g: fn(&State) -> i32, h: F) -> Option<Vec<State>>
+    where F: Fn(&State) -> i32 {
+        let mut reached : HashMap<State, (Option<State>, Node)> = HashMap::new();
+        let mut frontier : BinaryHeap<Node> = BinaryHeap::new();
+        let initial_node = Node { state: self.initial_state.clone(), cost: 0};
+        let mut goal_node : Option<Node> = None;
+
+        frontier.push(initial_node.clone());
+        reached.insert(self.initial_state.clone(), (None, initial_node));
+
+        while let Some(node) = frontier.pop() {
+
+            if JadeSwarm::is_goal(&node.state) {
+                goal_node = Some(node);
+                break
+            }
+
+            for child in self.best_first_expand(&node, g, &h) {
+                if !reached.contains_key(&child.state) || child.cost < reached.get(&child.state).unwrap().1.cost  {
+                    reached.insert(child.state.clone(), (Some(node.state.clone()), child.clone()));
+                    frontier.push(child);
+                }
+            }
+        }
+
+        // Trace back path
+        JadeSwarm::best_first_trace_back_path(goal_node, reached)
+    }
+
     fn breadth_first_search(&self) -> Option<Vec<State>> {
 
         // Do the search
@@ -102,29 +212,77 @@ impl JadeSwarm {
             reached.insert(initial_node, None);
         }
 
-        while !frontier.is_empty() {
-            let node_wrapped = frontier.pop_front();
-            match node_wrapped {
-                Some(node) => {
-                    for child in self.bfs_expand(&node) {
-                        if JadeSwarm::is_goal(&child) {
-                            goal_node = Some(child.clone());
-                            reached.insert(child, Some(node));
-                            break
-                        }
-                        if !reached.contains_key(&child) {
-                            frontier.push_back(child.clone());
-                            reached.insert(child, Some(node.clone()));
-                        }
-                    }
-                },
-                None => {
+        while let Some(node) = frontier.pop_front() {
+            for child in self.expand(&node) {
+                if JadeSwarm::is_goal(&child) {
+                    goal_node = Some(child.clone());
+                    reached.insert(child, Some(node));
                     break
+                }
+                if !reached.contains_key(&child) {
+                    frontier.push_back(child.clone());
+                    reached.insert(child, Some(node.clone()));
                 }
             }
         }
 
         // Trace back path
+        JadeSwarm::trace_back_path(goal_node, reached)
+    }
+
+    fn expand(&self, state: &State) -> Vec<State> {
+        let mut expanded_nodes = Vec::new();
+        for i in 0..state.config.len() {
+           expanded_nodes.push(self.successor(state, i))
+        }
+        expanded_nodes
+    }
+
+    fn best_first_expand<F>(&self, node: &Node, g: fn(&State) -> i32, h: F) -> Vec<Node>
+        where F: Fn(&State) -> i32 {
+        let mut expanded_nodes = Vec::new();
+        for i in 0..node.state.config.len() {
+            let next_state = self.successor(&node.state, i);
+           expanded_nodes.push(
+                Node {
+                    cost: node.cost + g(&next_state) + h(&next_state),
+                    state: next_state,
+                }
+            )
+        }
+        expanded_nodes
+    }
+
+    fn depth_first_search(&self) -> Option<Vec<State>> {
+        let mut reached : HashMap<State, Option<State>> = HashMap::new();
+        let mut frontier : VecDeque<(State, Option<State>)> = VecDeque::new();
+        let initial_node = self.initial_state.clone();
+
+        let mut goal_node : Option<State> = None;
+        if JadeSwarm::is_goal(&self.initial_state) {
+            goal_node = Some(initial_node)
+        } else {
+            frontier.push_back((initial_node.clone(), None));
+
+            while let Some((node, previous_node)) = frontier.pop_back() {
+                reached.insert(node.clone(), previous_node);
+                if JadeSwarm::is_goal(&node) {
+                    goal_node = Some(node);
+                    break
+                }
+                for child in self.expand(&node) {
+                    if !reached.contains_key(&child) {
+                        frontier.push_back((child, Some(node.clone())));
+                    }
+                }
+            }
+        }
+
+        // Trace back path
+        JadeSwarm::trace_back_path(goal_node, reached)
+    }
+
+    fn trace_back_path(goal_node: Option<State>, reached: HashMap<State, Option<State>>) -> Option<Vec<State>> {
         match goal_node {
             Some(goal_node_unwrapped) => { // The goal state was found
                 let mut path : Vec<State> = Vec::new();
@@ -142,8 +300,8 @@ impl JadeSwarm {
                             }
                         }
                     } else { // There isn't a key with p
-                        break
-                    }
+                            break
+                        }
                 }
                 return Some(path)
             },
@@ -153,16 +311,75 @@ impl JadeSwarm {
         }
     }
 
-    fn bfs_expand(&self, state: &State) -> Vec<State> {
-        let mut expanded_nodes = Vec::new();
-        for i in 0..state.config.len() {
-           expanded_nodes.push(self.successor(state, i))
+    fn best_first_trace_back_path(goal_node: Option<Node>, reached: HashMap<State, (Option<State>, Node)>) -> Option<Vec<State>> {
+        match goal_node {
+            Some(goal_node_unwrapped) => { // The goal state was found
+                let mut path : Vec<State> = Vec::new();
+                path.push(goal_node_unwrapped.state.clone());
+                let mut p = &goal_node_unwrapped.state;
+                loop {
+                    if let Some(p_unwrapped) = reached.get(p) { // There is a key with p
+                        match p_unwrapped {
+                            (Some(parent), _) => { // Node has a parent
+                                p = parent;
+                                path.push(p.clone());
+                            },
+                            (None, _) => { // Node doesn'nt a have a parent (we have reached the initial state)
+                                break
+                            }
+                        }
+                    } else { // There isn't a key with p
+                            break
+                        }
+                }
+                return Some(path)
+            },
+            None => { // No solutions were found
+                return None
+            }
         }
-        expanded_nodes
     }
 
+    fn depth_limited(&self, depth: usize) -> Option<Vec<State>> {
+        // Do the search
+        let mut reached : HashMap<State, Option<State>> = HashMap::new();
+        let mut frontier : VecDeque<(State, usize, Option<State>)> = VecDeque::new();
+        let initial_node = self.initial_state.clone();
 
-    fn depth_first_search(&self) -> Option<Vec<State>> {
+        let mut goal_node : Option<State> = None;
+        if JadeSwarm::is_goal(&self.initial_state) {
+            goal_node = Some(initial_node)
+        } else {
+            frontier.push_back((initial_node.clone(), 0, None));
+
+            while let Some((node, l, previous_node)) = frontier.pop_back() {
+                reached.insert(node.clone(), previous_node);
+                if JadeSwarm::is_goal(&node) {
+                    goal_node = Some(node);
+                    break
+                }
+                if l < depth {
+                    for child in self.expand(&node) {
+                        if !reached.contains_key(&child) {
+                            frontier.push_back((child, l+1, Some(node.clone())));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Trace back path
+        JadeSwarm::trace_back_path(goal_node, reached)
+    }
+
+    fn iterative_deepening_search(&self) -> Option<Vec<State>> {
+        for depth in 0..usize::MAX {
+            println!("depth {}", depth);
+            match self.depth_limited(depth) {
+                Some(path) => return Some(path),
+                None => continue,
+            }
+        }
         return None
     }
 
@@ -257,11 +474,48 @@ impl JadeGraph {
     }
 }
 
-fn main() {
-    test1();
+enum SearchMethod {
+    BFS(bool),
+    DFS(bool),
+    IDA(bool),
+    UCS(bool),
+    BidiS(bool),
+    AStar(bool),
+    GBFS(bool),
+    RBFS(bool),
+    IDAStar(bool)
 }
 
-fn test2() {
+struct SearchChoice {
+    bfs: SearchMethod,
+    dfs: SearchMethod,
+    ida: SearchMethod,
+    ucs: SearchMethod,
+    bidis: SearchMethod,
+    a_star: SearchMethod,
+    gbfs: SearchMethod,
+    rbfs: SearchMethod,
+    ida_star: SearchMethod
+}
+
+fn main() {
+    let search_choices = vec![
+        SearchMethod::BFS(true),
+        SearchMethod::DFS(false),
+        SearchMethod::IDA(true),
+        SearchMethod::UCS(true),
+        SearchMethod::BidiS(false),
+        SearchMethod::AStar(false),
+        SearchMethod::GBFS(false),
+        SearchMethod::RBFS(false),
+        SearchMethod::IDAStar(false)
+    ];
+    // test1(&search_choices);
+    // test2(&search_choices);
+    test2(&search_choices);
+}
+
+fn test2(search_choices: &Vec<SearchMethod>) {
     let mut jade_graph = JadeGraph::new(7);
     jade_graph.set_edge((0, 4));
     jade_graph.set_edge((1, 2));
@@ -279,20 +533,91 @@ fn test2() {
     jade_graph.set_node_color(5, StoneColor::Green);
     jade_graph.set_node_color(6, StoneColor::Red);
     let jade_swarm = JadeSwarm::new(jade_graph);
-
     println!("Test 2 Solutions: ");
-    println!("BFS: ");
-    match jade_swarm.breadth_first_search() {
-        Some(path) => {
-            println!("{}", jade_swarm.write_results(path))
-        },
-        None => {
-            println!("No solutions were found.")
+    run_search_choices(search_choices, &jade_swarm)
+}
+
+fn run_search_choices(search_choices: &Vec<SearchMethod>, jade_swarm: &JadeSwarm) {
+    for search_choice in search_choices {
+        match search_choice {
+            SearchMethod::BFS(true) => {
+                println!("BFS: ");
+                match jade_swarm.breadth_first_search() {
+                    Some(path) => {
+                        println!("{}", jade_swarm.write_results(path))
+                    },
+                    None => {
+                        println!("No BFS solutions were found.")
+                    }
+                }
+            },
+            SearchMethod::DFS(true) => {
+                println!("DFS: ");
+                match jade_swarm.depth_first_search() {
+                    Some(path) => {
+                        println!("{}", jade_swarm.write_results(path))
+                    },
+                    None => {
+                        println!("No DFS solutions were found.")
+                    }
+                }
+            },
+            SearchMethod::IDA(true) => {
+                println!("IDS: ");
+                match jade_swarm.iterative_deepening_search() {
+                    Some(path) => {
+                        println!("{}", jade_swarm.write_results(path))
+                    },
+                    None => {
+                        println!("No IDA solutions were found.")
+                    }
+                }
+            },
+            SearchMethod::UCS(true) => {
+                println!("UCS: ");
+                match jade_swarm.uniform_cost_search() {
+                    Some(path) => {
+                        println!("{}", jade_swarm.write_results(path))
+                    },
+                    None => {
+                        println!("No UCS solutions were found.")
+                    }
+                }
+            },
+            SearchMethod::BidiS(true) => {
+            },
+            SearchMethod::AStar(true) => {
+                println!("A*: ");
+                match jade_swarm.a_star() {
+                    Some(path) => {
+                        println!("{}", jade_swarm.write_results(path))
+                    },
+                    None => {
+                        println!("No A* solutions were found.")
+                    }
+                }
+            },
+            SearchMethod::GBFS(true) => {
+                println!("GBFS: ");
+                match jade_swarm.greedy_best_first_search() {
+                    Some(path) => {
+                        println!("{}", jade_swarm.write_results(path))
+                    },
+                    None => {
+                        println!("No GBFS solutions were found.")
+                    }
+                }
+            },
+            SearchMethod::RBFS(true) => {
+            },
+            SearchMethod::IDAStar(true) => {
+            },
+            _ => ()
         }
     }
 }
 
-fn test1() {
+fn test1(search_choices: &Vec<SearchMethod>) {
     let mut jade_graph = JadeGraph::new(5);
     jade_graph.set_edge((0, 1));
     jade_graph.set_edge((0, 2));
@@ -307,19 +632,12 @@ fn test1() {
     jade_graph.set_node_color(4, StoneColor::Red);
     let jade_swarm = JadeSwarm::new(jade_graph);
 
-    println!("Test 2 Solutions: ");
-    println!("BFS: ");
-    match jade_swarm.breadth_first_search() {
-        Some(path) => {
-            println!("{}", jade_swarm.write_results(path))
-        },
-        None => {
-            println!("No solutions were found.")
-        }
-    }
+    println!("Test 1 Solutions: ");
+    run_search_choices(search_choices, &jade_swarm)
 }
 
-fn test3() {
+
+fn test3(search_choices: &Vec<SearchMethod>) {
     let mut jade_graph = JadeGraph::new(15);
     jade_graph.set_edge((0, 1));
     jade_graph.set_edge((0, 2));
@@ -359,13 +677,5 @@ fn test3() {
     let jade_swarm = JadeSwarm::new(jade_graph);
 
     println!("Test 3 Solutions: ");
-    println!("BFS: ");
-    match jade_swarm.breadth_first_search() {
-        Some(path) => {
-            println!("{}", jade_swarm.write_results(path))
-        },
-        None => {
-            println!("No solutions were found.")
-        }
-    }
+    run_search_choices(search_choices, &jade_swarm)
 }
