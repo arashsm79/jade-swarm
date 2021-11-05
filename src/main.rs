@@ -1,4 +1,7 @@
 use bitvec::prelude::*;
+use std::collections::hash_map::DefaultHasher;
+use core::hash::Hasher;
+use core::hash::Hash;
 use std::collections::{HashMap, VecDeque};
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
@@ -16,11 +19,18 @@ struct JadeGraph {
     initial_blacks_pos: BitVec<Lsb0, u8>,
 }
 
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 struct State {
     config: BitVec<Lsb0, u8>,
     blacks_pos: BitVec<Lsb0, u8>,
     selected_node: usize, // which node was selected that lead to this state
+}
+
+impl Hash for State {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.config.hash(state);
+        self.blacks_pos.hash(state);
+    }
 }
 
 // TODO make sure Ord is consistent with PartialOrd
@@ -198,9 +208,10 @@ impl JadeSwarm {
     }
 
     fn breadth_first_search(&self) -> Option<Vec<State>> {
+        let mut count = 0;
 
         // Do the search
-        let mut reached : HashMap<State, Option<State>> = HashMap::new();
+        let mut reached : HashMap<u64, Option<State>> = HashMap::new();
         let mut frontier : VecDeque<State> = VecDeque::new();
         let initial_node = self.initial_state.clone();
 
@@ -209,31 +220,39 @@ impl JadeSwarm {
             goal_node = Some(initial_node)
         } else {
             frontier.push_back(initial_node.clone());
-            reached.insert(initial_node, None);
+            println!("added child: {:?}", initial_node);
+            println!("with hash child: {:?}\n", calculate_hash(&initial_node));
+            reached.insert(calculate_hash(&initial_node), None);
         }
 
         while let Some(node) = frontier.pop_front() {
+            println!("Expansion {} node: {:?}\n", count, node);
             for child in self.expand(&node) {
+                println!("child node: {:?}\n", child);
                 if JadeSwarm::is_goal(&child) {
                     goal_node = Some(child.clone());
-                    reached.insert(child, Some(node));
+                    reached.insert(calculate_hash(&child), Some(node));
                     break
                 }
-                if !reached.contains_key(&child) {
+                if !reached.contains_key(&calculate_hash(&child)) {
+                    println!("added child: {:?}", child);
+                    println!("with hash child: {:?}\n", calculate_hash(&child));
                     frontier.push_back(child.clone());
-                    reached.insert(child, Some(node.clone()));
+                    reached.insert(calculate_hash(&child), Some(node.clone()));
                 }
             }
+            count = count + 1;
         }
 
         // Trace back path
-        JadeSwarm::trace_back_path(goal_node, reached)
+        // JadeSwarm::trace_back_path(goal_node, reached)
+        None
     }
 
     fn expand(&self, state: &State) -> Vec<State> {
         let mut expanded_nodes = Vec::new();
         for i in 0..state.config.len() {
-           expanded_nodes.push(self.successor(state, i))
+            expanded_nodes.push(self.successor(state, i))
         }
         expanded_nodes
     }
@@ -343,25 +362,27 @@ impl JadeSwarm {
     fn depth_limited(&self, depth: usize) -> Option<Vec<State>> {
         // Do the search
         let mut reached : HashMap<State, Option<State>> = HashMap::new();
-        let mut frontier : VecDeque<(State, usize, Option<State>)> = VecDeque::new();
+        let mut frontier : VecDeque<(State, usize)> = VecDeque::new();
         let initial_node = self.initial_state.clone();
 
         let mut goal_node : Option<State> = None;
         if JadeSwarm::is_goal(&self.initial_state) {
             goal_node = Some(initial_node)
         } else {
-            frontier.push_back((initial_node.clone(), 0, None));
+            frontier.push_back((initial_node.clone(), 0));
+            reached.insert(initial_node, None);
 
-            while let Some((node, l, previous_node)) = frontier.pop_back() {
-                reached.insert(node.clone(), previous_node);
+            while let Some((node, l)) = frontier.pop_back() {
                 if JadeSwarm::is_goal(&node) {
                     goal_node = Some(node);
                     break
                 }
+
                 if l < depth {
                     for child in self.expand(&node) {
                         if !reached.contains_key(&child) {
-                            frontier.push_back((child, l+1, Some(node.clone())));
+                            reached.insert(child.clone(), Some(node.clone()));
+                            frontier.push_back((child, l+1));
                         }
                     }
                 }
@@ -486,24 +507,12 @@ enum SearchMethod {
     IDAStar(bool)
 }
 
-struct SearchChoice {
-    bfs: SearchMethod,
-    dfs: SearchMethod,
-    ida: SearchMethod,
-    ucs: SearchMethod,
-    bidis: SearchMethod,
-    a_star: SearchMethod,
-    gbfs: SearchMethod,
-    rbfs: SearchMethod,
-    ida_star: SearchMethod
-}
-
 fn main() {
     let search_choices = vec![
         SearchMethod::BFS(true),
         SearchMethod::DFS(false),
         SearchMethod::IDA(true),
-        SearchMethod::UCS(true),
+        SearchMethod::UCS(false),
         SearchMethod::BidiS(false),
         SearchMethod::AStar(false),
         SearchMethod::GBFS(false),
@@ -512,7 +521,7 @@ fn main() {
     ];
     // test1(&search_choices);
     // test2(&search_choices);
-    test2(&search_choices);
+    test1(&search_choices);
 }
 
 fn test2(search_choices: &Vec<SearchMethod>) {
@@ -537,6 +546,12 @@ fn test2(search_choices: &Vec<SearchMethod>) {
     run_search_choices(search_choices, &jade_swarm)
 }
 
+fn calculate_hash<T: Hash>(t: &T) -> u64 {
+    let mut s = DefaultHasher::new();
+    t.hash(&mut s);
+    s.finish()
+}
+
 fn run_search_choices(search_choices: &Vec<SearchMethod>, jade_swarm: &JadeSwarm) {
     for search_choice in search_choices {
         match search_choice {
@@ -544,6 +559,9 @@ fn run_search_choices(search_choices: &Vec<SearchMethod>, jade_swarm: &JadeSwarm
                 println!("BFS: ");
                 match jade_swarm.breadth_first_search() {
                     Some(path) => {
+                        for elem in &path {
+                            println!("{:#?}", calculate_hash(elem));
+                        }
                         println!("{}", jade_swarm.write_results(path))
                     },
                     None => {
@@ -566,6 +584,9 @@ fn run_search_choices(search_choices: &Vec<SearchMethod>, jade_swarm: &JadeSwarm
                 println!("IDS: ");
                 match jade_swarm.iterative_deepening_search() {
                     Some(path) => {
+                        for elem in &path {
+                            println!("{:#?}", calculate_hash(elem));
+                        }
                         println!("{}", jade_swarm.write_results(path))
                     },
                     None => {
@@ -625,7 +646,7 @@ fn test1(search_choices: &Vec<SearchMethod>) {
     jade_graph.set_edge((1, 2));
     jade_graph.set_edge((3, 4));
 
-    jade_graph.set_node_color(0, StoneColor::Red);
+    jade_graph.set_node_color(0, StoneColor::Black);
     jade_graph.set_node_color(1, StoneColor::Red);
     jade_graph.set_node_color(2, StoneColor::Red);
     jade_graph.set_node_color(3, StoneColor::Green);
