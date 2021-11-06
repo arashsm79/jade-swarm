@@ -9,6 +9,7 @@ use std::collections::{HashMap, VecDeque};
 struct JadeSwarm {
     graph: JadeGraph,
     initial_state: State,
+    maximum_branching_factor: i32
 }
 
 #[derive(Debug)]
@@ -54,12 +55,20 @@ enum StoneColor {
 
 impl JadeSwarm {
     fn new(graph: JadeGraph) -> JadeSwarm {
+        let mut maximum_branching_factor: i32 = 0;
+        for adj_mat_row in &graph.adj_mat {
+            maximum_branching_factor = std::cmp::max(
+                maximum_branching_factor,
+                adj_mat_row.iter().filter(|b| (*b) == true).count() as i32,
+            );
+        }
         JadeSwarm {
             initial_state: State {
                 config: graph.initial_config.clone(),
                 blacks_pos: graph.initial_blacks_pos.clone(),
             },
             graph,
+            maximum_branching_factor
         }
     }
 
@@ -227,7 +236,83 @@ impl JadeSwarm {
         (JadeSwarm::trace_back_path(goal_node, reached), smallest_node_cost)
     }
 
+    fn recursive_best_first_search(&self) -> Option<Vec<Node>> {
+        let g = |_node: &Node| -> i32 { 1 };
 
+        let initial_node = Node {
+            state: self.initial_state.clone(),
+            cost: 0,
+            path_cost: 0,
+            selected_node_id: 0,
+        };
+
+        let (solution, _fvalue) = self.rbfs(initial_node, i32::MAX, g);
+        solution
+    }
+
+    fn rbfs_h(&self, node: &Node) -> i32 {
+            let x = f64::from(
+                node.state.config.len() as i32
+                    - node.state.config.iter().filter(|b| (*b) == true).count() as i32,
+            ) / self.maximum_branching_factor as f64;
+            x.ceil() as i32
+    }
+
+    fn rbfs_expand(&self, node: &Node, g: fn(&Node) -> i32) -> Vec<Node>
+    {
+        let mut expanded_nodes = Vec::new();
+        for i in 0..node.state.config.len() {
+            let next_node = Node {
+                state: self.successor(&node.state, i),
+                cost: 0,
+                path_cost: 0,
+                selected_node_id: i,
+            };
+            let path_cost = node.path_cost + g(&next_node);
+            expanded_nodes.push(Node {
+                path_cost,
+                cost: path_cost + self.rbfs_h(&next_node),
+                ..next_node
+            })
+        }
+        expanded_nodes
+    }
+
+    fn rbfs(&self, node: Node, f_limit: i32,  g: fn(&Node) -> i32) -> (Option<Vec<Node>>, i32)
+    {
+        if JadeSwarm::is_goal(&node.state) {
+            return (Some(vec![node]), f_limit);
+        }
+
+        let mut node_successors: BinaryHeap<Node> = BinaryHeap::new();
+
+        for mut child in self.rbfs_expand(&node, g) {
+            child.cost = std::cmp::max(child.cost, node.cost);
+            node_successors.push(child)
+        }
+
+        loop {
+            if let Some(best) = node_successors.pop() {
+                if best.cost > f_limit {
+                    return (None, best.cost)
+                }
+                if let Some(alternative) = node_successors.pop() {
+                    let (result, best_f) = self.rbfs(best, std::cmp::min(f_limit, alternative.cost), g);
+                    if result != None {
+                        return (result, best_f)
+                    }
+                } else {
+                    let (result, best_f) = self.rbfs(best, f_limit, g);
+                    if result != None {
+                        return (result, best_f)
+                    }
+                    
+                }
+            } else {
+                return (None, f_limit)
+            }
+        }
+    }
 
     fn greedy_best_first_search(&self) -> Option<Vec<Node>> {
         let g = |_node: &Node| -> i32 { 0 };
@@ -772,7 +857,7 @@ enum SearchMethod {
 
 fn main() {
     let search_choices = vec![
-        SearchMethod::BFS(false),
+        SearchMethod::BFS(true),
         SearchMethod::DFS(false),
         SearchMethod::IDA(false),
         SearchMethod::UCS(false),
@@ -780,7 +865,7 @@ fn main() {
         SearchMethod::AStar(false),
         SearchMethod::GBFS(false),
         SearchMethod::RBFS(false),
-        SearchMethod::IDAStar(true),
+        SearchMethod::IDAStar(false),
     ];
     // test1(&search_choices);
     // test2(&search_choices);
@@ -896,6 +981,15 @@ fn run_search_choices(search_choices: &Vec<SearchMethod>, jade_swarm: &JadeSwarm
                 }
             },
             SearchMethod::RBFS(true) => {
+                println!("RBFS: ");
+                match jade_swarm.recursive_best_first_search() {
+                    Some(path) => {
+                        println!("{}", jade_swarm.write_results(path))
+                    }
+                    None => {
+                        println!("No RBFS solutions were found.")
+                    }
+                }
             },
             SearchMethod::IDAStar(true) => {
                 println!("IDA*: ");
