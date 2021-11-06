@@ -1,4 +1,3 @@
-use bitvec::prelude::*;
 use core::hash::Hash;
 use core::hash::Hasher;
 use std::cmp::Ordering;
@@ -15,15 +14,15 @@ struct JadeSwarm {
 #[derive(Debug)]
 struct JadeGraph {
     size: usize,
-    adj_mat: Vec<BitVec<Lsb0, u8>>,
-    initial_config: BitVec<Lsb0, u8>,
-    initial_blacks_pos: BitVec<Lsb0, u8>,
+    adj_mat: Vec<Vec<bool>>,
+    initial_config: Vec<bool>,
+    initial_blacks_pos: Vec<bool>,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 struct State {
-    config: BitVec<Lsb0, u8>,
-    blacks_pos: BitVec<Lsb0, u8>,
+    config: Vec<bool>,
+    blacks_pos: Vec<bool>,
 }
 
 // TODO make sure Ord is consistent with PartialOrd
@@ -59,7 +58,7 @@ impl JadeSwarm {
         for adj_mat_row in &graph.adj_mat {
             maximum_branching_factor = std::cmp::max(
                 maximum_branching_factor,
-                adj_mat_row.iter().filter(|b| (*b) == true).count() as i32,
+                adj_mat_row.iter().filter(|&b| (*b) == true).count() as i32,
             );
         }
         JadeSwarm {
@@ -83,36 +82,53 @@ impl JadeSwarm {
         }
     }
 
+    fn xor_and(vec1: &Vec<bool>, vec2: &Vec<bool>, vec3: &Vec<bool>) -> Vec<bool> {
+        let size = vec1.len();
+        let mut result = vec![false; size];
+        for i in 0..size {
+            result[i] = (vec1[i] ^ vec2[i]) & vec3[i];
+        }
+        result
+    }
+
+    fn and(vec1: &Vec<bool>, vec2: &Vec<bool>) -> Vec<bool> {
+        let size = vec1.len();
+        let mut result = vec![false; size];
+        for i in 0..size {
+            result[i] = vec1[i] & vec2[i];
+        }
+        result
+    }
+
     fn successor(&self, current_state: &State, selected_node: usize) -> State {
-        let mut config = current_state.config.clone();
-        let mut blacks_pos = current_state.blacks_pos.clone();
         let graph = &self.graph;
 
         // TODO find a way to avoid cloning
-        config = (config ^ graph.adj_mat[selected_node].clone()) & current_state.blacks_pos.clone();
+        let mut blacks_pos = current_state.blacks_pos.clone();
+        let mut config = JadeSwarm::xor_and(&current_state.config, &graph.adj_mat[selected_node], &blacks_pos);
+
         match JadeSwarm::get_color(current_state, selected_node) {
             StoneColor::Red => {}
             StoneColor::Green => {}
             StoneColor::Black => {
-                let neighbors_count = (graph.adj_mat[selected_node].clone()
-                    & current_state.blacks_pos.clone())
+                let non_black_adj = JadeSwarm::and(&graph.adj_mat[selected_node], &blacks_pos);
+                let neighbors_count = non_black_adj
                 .iter()
-                .filter(|b| (*b) == true)
+                .filter(|&b| (*b) == true)
                 .count();
-                let green_neighbors_count = (config.clone()
-                    & (graph.adj_mat[selected_node].clone() & current_state.blacks_pos.clone()))
+                let green_neighbors_count = JadeSwarm::and(&config, &non_black_adj)
                 .iter()
-                .filter(|b| (*b) == true)
+                .filter(|&b| (*b) == true)
                 .count();
                 let red_neighbors_count = neighbors_count - green_neighbors_count;
                 if green_neighbors_count > neighbors_count / 2 {
                     // Turn black node to green
-                    config.set(selected_node, true);
-                    blacks_pos.set(selected_node, true);
+                    config[selected_node] = true;
+                    blacks_pos[selected_node] = true;
                 } else if red_neighbors_count > neighbors_count / 2 {
                     // Turn black node to red
-                    config.set(selected_node, false);
-                    blacks_pos.set(selected_node, true);
+                    config[selected_node] = false;
+                    blacks_pos[selected_node] = true;
                 } // else the black node stays black
             }
         }
@@ -120,7 +136,7 @@ impl JadeSwarm {
     }
 
     fn is_goal(state: &State) -> bool {
-        state.config.iter().filter(|b| (*b) == true).count() == state.config.len()
+        state.config.iter().filter(|&b| (*b) == true).count() == state.config.len()
     }
 
     fn a_star(&self) -> Option<Vec<Node>> {
@@ -134,14 +150,14 @@ impl JadeSwarm {
         for adj_mat_row in &self.graph.adj_mat {
             maximum_branching_factor = std::cmp::max(
                 maximum_branching_factor,
-                adj_mat_row.iter().filter(|b| (*b) == true).count(),
+                adj_mat_row.iter().filter(|&b| (*b) == true).count(),
             );
         }
 
         let h = |node: &Node| -> i32 {
             let x = f64::from(
                 node.state.config.len() as i32
-                    - node.state.config.iter().filter(|b| (*b) == true).count() as i32,
+                    - node.state.config.iter().filter(|&b| (*b) == true).count() as i32,
             ) / maximum_branching_factor as f64;
             x.ceil() as i32
         };
@@ -155,13 +171,13 @@ impl JadeSwarm {
         for adj_mat_row in &self.graph.adj_mat {
             maximum_branching_factor = std::cmp::max(
                 maximum_branching_factor,
-                adj_mat_row.iter().filter(|b| (*b) == true).count(),
+                adj_mat_row.iter().filter(|&b| (*b) == true).count(),
             );
         }
         let h = |node: &Node| -> i32 {
             let x = f64::from(
                 node.state.config.len() as i32
-                    - node.state.config.iter().filter(|b| (*b) == true).count() as i32,
+                    - node.state.config.iter().filter(|&b| (*b) == true).count() as i32,
             ) / maximum_branching_factor as f64;
             x.ceil() as i32
         };
@@ -253,7 +269,7 @@ impl JadeSwarm {
     fn rbfs_h(&self, node: &Node) -> i32 {
             let x = f64::from(
                 node.state.config.len() as i32
-                    - node.state.config.iter().filter(|b| (*b) == true).count() as i32,
+                    - node.state.config.iter().filter(|&b| (*b) == true).count() as i32,
             ) / self.maximum_branching_factor as f64;
             x.ceil() as i32
     }
@@ -325,14 +341,14 @@ impl JadeSwarm {
         for adj_mat_row in &self.graph.adj_mat {
             maximum_branching_factor = std::cmp::max(
                 maximum_branching_factor,
-                adj_mat_row.iter().filter(|b| (*b) == true).count(),
+                adj_mat_row.iter().filter(|&b| (*b) == true).count(),
             );
         }
 
         let h = |node: &Node| -> i32 {
             let x = f64::from(
                 node.state.config.len() as i32
-                    - node.state.config.iter().filter(|b| (*b) == true).count() as i32,
+                    - node.state.config.iter().filter(|&b| (*b) == true).count() as i32,
             ) / maximum_branching_factor as f64;
             x.ceil() as i32
         };
@@ -427,8 +443,8 @@ impl JadeSwarm {
         let mut frontier_b: BinaryHeap<Node> = BinaryHeap::new();
         let initial_node_b = Node {
             state: State {
-                config: bitvec![Lsb0, u8; 1; self.initial_state.config.len()],
-                blacks_pos: bitvec![Lsb0, u8; 1; self.initial_state.config.len()],
+                config: vec![true; self.initial_state.config.len()],
+                blacks_pos: vec![true; self.initial_state.config.len()],
             },
             cost: 0,
             path_cost: 0,
@@ -799,18 +815,18 @@ impl JadeGraph {
     }
 
     fn new(size: usize) -> JadeGraph {
-        let mut adj_mat: Vec<BitVec<Lsb0, u8>> = Vec::new();
+        let mut adj_mat: Vec<Vec<bool>> = Vec::new();
         for i in 0..size {
-            let mut row = bitvec![Lsb0, u8; 0; size];
-            row.set(i, true);
+            let mut row = vec![false; size];
+            row[i] = true;
             adj_mat.push(row);
         }
 
         JadeGraph {
             size,
             adj_mat,
-            initial_config: bitvec![Lsb0, u8; 0; size],
-            initial_blacks_pos: bitvec![Lsb0, u8; 1; size],
+            initial_config: vec![false; size],
+            initial_blacks_pos: vec![true; size],
         }
     }
 
@@ -819,8 +835,8 @@ impl JadeGraph {
         assert!(edge.0 < size, "The first node index is out of range.");
         assert!(edge.1 < size, "The second node index is out of range.");
         assert!(edge.0 != edge.1, "Loops are not allowed.");
-        self.adj_mat[edge.0].set(edge.1, true);
-        self.adj_mat[edge.1].set(edge.0, true);
+        self.adj_mat[edge.0][edge.1] = true;
+        self.adj_mat[edge.1][edge.0] = true;
     }
 
     fn set_node_color(&mut self, node_number: usize, color: StoneColor) {
@@ -830,14 +846,14 @@ impl JadeGraph {
         );
         match color {
             StoneColor::Red => {
-                self.initial_config.set(node_number, false);
+                self.initial_config[node_number] = false;
             }
             StoneColor::Green => {
-                self.initial_config.set(node_number, true);
+                self.initial_config[node_number] = true;
             }
             StoneColor::Black => {
-                self.initial_config.set(node_number, false);
-                self.initial_blacks_pos.set(node_number, false);
+                self.initial_config[node_number] = false;
+                self.initial_blacks_pos[node_number] = false;
             }
         }
     }
