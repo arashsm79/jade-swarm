@@ -104,6 +104,27 @@ impl PartialOrd for Node {
     }
 }
 
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+struct RBFSNode {
+    state: State,
+    parent: Option<Rc<RBFSNode>>,
+    selected_node_id: usize, // which node on the previous state was selected that lead to this node with this state
+    path_cost: i32,
+    cost: i32,
+}
+
+impl Ord for RBFSNode {
+    fn cmp(&self, other: &Self) -> Ordering {
+        other.cost.cmp(&self.cost)
+    }
+}
+
+impl PartialOrd for RBFSNode {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 enum StoneColor {
     Green,
     Red,
@@ -846,21 +867,21 @@ impl JadeSwarm {
 * --------------------------------------
 */
     fn recursive_best_first_search(&self) -> Option<Vec<Node>> {
-        let g = |_node: &Node| -> i32 { 1 };
+        let g = |_node: &RBFSNode| -> i32 { 1 };
 
-        let initial_node = Node {
+        let initial_node = RBFSNode {
             state: self.initial_state.clone(),
             cost: 0,
             path_cost: 0,
             selected_node_id: 0,
+            parent: None
         };
 
-        let mut reached: HashMap<State, Option<Node>> = HashMap::new();
         let (solution, _fvalue) = self.rbfs(initial_node, i32::MAX, g);
-        solution
+        JadeSwarm::rbfs_trace_back_path(solution)
     }
 
-    fn rbfs_h(&self, node: &Node) -> i32 {
+    fn rbfs_h(&self, node: &RBFSNode) -> i32 {
             let x = f64::from(
                 node.state.config.len() as i32
                     - node.state.config.iter().filter(|&b| (*b) == true).count() as i32,
@@ -868,18 +889,19 @@ impl JadeSwarm {
             x.ceil() as i32
     }
 
-    fn rbfs_expand(&self, node: &Node, g: fn(&Node) -> i32) -> Vec<Node>
+    fn rbfs_expand(&self, node: &RBFSNode, g: fn(&RBFSNode) -> i32) -> Vec<RBFSNode>
     {
         let mut expanded_nodes = Vec::new();
         for i in 0..node.state.config.len() {
-            let next_node = Node {
+            let next_node = RBFSNode {
                 state: self.successor(&node.state, i),
                 cost: 0,
                 path_cost: 0,
                 selected_node_id: i,
+                parent: Some(Rc::new((*node).clone()))
             };
             let path_cost = node.path_cost + g(&next_node);
-            expanded_nodes.push(Node {
+            expanded_nodes.push(RBFSNode {
                 path_cost,
                 cost: path_cost + self.rbfs_h(&next_node),
                 ..next_node
@@ -888,13 +910,13 @@ impl JadeSwarm {
         expanded_nodes
     }
 
-    fn rbfs(&self, node: Node, f_limit: i32,  g: fn(&Node) -> i32) -> (Option<Vec<Node>>, i32)
+    fn rbfs(&self, node: RBFSNode, f_limit: i32,  g: fn(&RBFSNode) -> i32) -> (Option<RBFSNode>, i32)
     {
         if JadeSwarm::is_goal(&node.state) {
-            return (Some(vec![node]), f_limit);
+            return (Some(node), f_limit);
         }
 
-        let mut node_successors: BinaryHeap<Node> = BinaryHeap::new();
+        let mut node_successors: BinaryHeap<RBFSNode> = BinaryHeap::new();
 
         for mut child in self.rbfs_expand(&node, g) {
             child.cost = std::cmp::max(child.cost, node.cost);
@@ -914,6 +936,47 @@ impl JadeSwarm {
                     best.cost = best_f;
                     node_successors.push(best);
                 }
+            }
+        }
+    }
+
+    fn rbfs_trace_back_path(
+        goal_node: Option<RBFSNode>,
+    ) -> Option<Vec<Node>> {
+        match goal_node {
+            Some(goal_node_unwrapped) => {
+                // The goal state was found
+                let mut path: Vec<Node> = Vec::new();
+                path.push(Node {
+                    state: goal_node_unwrapped.state,
+                    selected_node_id: goal_node_unwrapped.selected_node_id,
+                    cost: goal_node_unwrapped.cost,
+                    path_cost: goal_node_unwrapped.path_cost
+                });
+                let mut p = goal_node_unwrapped.parent;
+                loop {
+                    match p {
+                        Some(parent) => {
+                            // Node has a parent
+                            path.push(Node {
+                                state: parent.state.clone(),
+                                selected_node_id: parent.selected_node_id,
+                                cost: parent.cost,
+                                path_cost: parent.path_cost
+                            });
+                            p = parent.parent.clone();
+                        }
+                        None => {
+                            // Node doesn't a have a parent (we have reached the initial state)
+                            break;
+                        }
+                    }
+                }
+                return Some(path);
+            }
+            None => {
+                // No solutions were found
+                return None;
             }
         }
     }
@@ -942,17 +1005,20 @@ enum SearchMethod {
 
 fn main() {
     let search_choices = vec![
-        SearchMethod::BFS(false),
-        SearchMethod::DFS(false),
-        SearchMethod::IDA(false),
-        SearchMethod::UCS(false),
-        SearchMethod::BidiS(false),
-        SearchMethod::AStar(false),
-        SearchMethod::GBFS(false),
+        SearchMethod::BFS(true),
+        SearchMethod::DFS(true),
+        SearchMethod::IDA(true),
+        SearchMethod::UCS(true),
+        SearchMethod::BidiS(true),
+        SearchMethod::AStar(true),
+        SearchMethod::GBFS(true),
         SearchMethod::RBFS(true),
-        SearchMethod::IDAStar(false),
+        SearchMethod::IDAStar(true),
     ];
     test2(&search_choices);
+    // test3 has a lot of nodes. Some search algorithms might take an infeasable amoout of time to
+    // complete. You can turn them off by changing the value of the corresponding search algorithm
+    // from true to false in the search_choices vector.
 }
 
 fn test1(search_choices: &Vec<SearchMethod>) {
