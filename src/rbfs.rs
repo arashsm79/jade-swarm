@@ -41,19 +41,21 @@ impl JadeSwarm {
     {
         let mut expanded_nodes = Vec::new();
         for i in 0..node.state.config.len() {
-            let next_node = RBFSNode {
-                state: self.successor(&node.state, i),
-                cost: 0,
-                path_cost: 0,
-                selected_node_id: i,
-                parent: Some(Rc::new((*node).clone()))
-            };
-            let path_cost = node.path_cost + g(&next_node);
-            expanded_nodes.push(RBFSNode {
-                path_cost,
-                cost: path_cost + self.rbfs_h(&next_node),
-                ..next_node
-            })
+            if i != node.selected_node_id {
+                let next_node = RBFSNode {
+                    state: self.successor(&node.state, i),
+                    cost: 0,
+                    path_cost: 0,
+                    selected_node_id: i,
+                    parent: Some(Rc::new((*node).clone()))
+                };
+                let path_cost = node.path_cost + g(&next_node);
+                expanded_nodes.push(RBFSNode {
+                    path_cost,
+                    cost: path_cost + self.rbfs_h(&next_node),
+                    ..next_node
+                })
+                }
         }
         expanded_nodes
     }
