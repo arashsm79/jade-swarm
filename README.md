@@ -38,7 +38,7 @@ The model is available at:
 
 ## Heuristic
 The description of the heuristic and the proof for consistency and admissibility is available at:
-[Model](./assets/jade-swarm-heuristic.pdf)
+[Heuristic](./assets/jade-swarm-heuristic.pdf)
 
 
 ## Usage Guide
