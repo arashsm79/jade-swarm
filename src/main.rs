@@ -18,27 +18,39 @@ use crate::problem::StoneColor;
 
 enum SearchMethod {
     BFS(bool),
-    DFS(bool),
-    IDA(bool),
+    DFSReached(bool),
+    DFSWithoutCycleChecking(bool),
+    DFSWithCycleChecking(bool),
+    IDSReached(bool),
+    IDSWithoutCycleChecking(bool),
+    IDSWithCycleChecking(bool),
     UCS(bool),
     BidiS(bool),
     AStar(bool),
     GBFS(bool),
     RBFS(bool),
-    IDAStar(bool),
+    IDAStarReached(bool),
+    IDAStarWithoutCycleChecking(bool),
+    IDAStarWithCycleChecking(bool),
 }
 
 fn main() {
     let search_choices = vec![
         SearchMethod::BFS(true),
-        SearchMethod::DFS(true),
-        SearchMethod::IDA(true),
+        SearchMethod::DFSReached(true),
+        SearchMethod::DFSWithoutCycleChecking(false),
+        SearchMethod::DFSWithCycleChecking(false),
+        SearchMethod::IDSReached(true),
+        SearchMethod::IDSWithoutCycleChecking(false),
+        SearchMethod::IDSWithCycleChecking(false),
         SearchMethod::UCS(true),
         SearchMethod::BidiS(true),
         SearchMethod::AStar(true),
         SearchMethod::GBFS(true),
         SearchMethod::RBFS(true),
-        SearchMethod::IDAStar(true),
+        SearchMethod::IDAStarReached(true),
+        SearchMethod::IDAStarWithoutCycleChecking(false),
+        SearchMethod::IDAStarWithCycleChecking(false),
     ];
     test2(&search_choices);
     // test3 has a lot of nodes. Some search algorithms might take an infeasable amoout of time to
@@ -155,9 +167,9 @@ fn run_search_choices(search_choices: &Vec<SearchMethod>, jade_swarm: &JadeSwarm
                     }
                 }
             },
-            SearchMethod::DFS(true) => {
-                println!("DFS: ");
-                match jade_swarm.depth_first_search() {
+            SearchMethod::DFSReached(true) => {
+                println!("DFS With Reached: ");
+                match jade_swarm.depth_first_search_with_reached() {
                     Some(path) => {
                         println!("{}", jade_swarm.write_results(path))
                     }
@@ -166,9 +178,53 @@ fn run_search_choices(search_choices: &Vec<SearchMethod>, jade_swarm: &JadeSwarm
                     }
                 }
             },
-            SearchMethod::IDA(true) => {
-                println!("IDS: ");
-                match jade_swarm.iterative_deepening_search() {
+            SearchMethod::DFSWithCycleChecking(true) => {
+                println!("DFS With Cycle Checking: ");
+                match jade_swarm.depth_first_search_with_cycle_checking() {
+                    Some(path) => {
+                        println!("{}", jade_swarm.write_results(path))
+                    }
+                    None => {
+                        println!("No DFS solutions were found.")
+                    }
+                }
+            },
+            SearchMethod::DFSWithoutCycleChecking(true) => {
+                println!("DFS Without Cycle Checking: ");
+                match jade_swarm.depth_first_search_without_cycle_checking() {
+                    Some(path) => {
+                        println!("{}", jade_swarm.write_results(path))
+                    }
+                    None => {
+                        println!("No DFS solutions were found.")
+                    }
+                }
+            },
+            SearchMethod::IDSReached(true) => {
+                println!("IDS With Reached: ");
+                match jade_swarm.iterative_deepening_search_with_reached() {
+                    Some(path) => {
+                        println!("{}", jade_swarm.write_results(path))
+                    }
+                    None => {
+                        println!("No IDA solutions were found.")
+                    }
+                }
+            },
+            SearchMethod::IDSWithoutCycleChecking(true) => {
+                println!("IDS Without Cycle Checking: ");
+                match jade_swarm.iterative_deepening_search_without_cycle_checking() {
+                    Some(path) => {
+                        println!("{}", jade_swarm.write_results(path))
+                    }
+                    None => {
+                        println!("No IDA solutions were found.")
+                    }
+                }
+            },
+            SearchMethod::IDSWithCycleChecking(true) => {
+                println!("IDS With Cycle Checking: ");
+                match jade_swarm.iterative_deepening_search_with_cycle_checking() {
                     Some(path) => {
                         println!("{}", jade_swarm.write_results(path))
                     }
@@ -232,9 +288,31 @@ fn run_search_choices(search_choices: &Vec<SearchMethod>, jade_swarm: &JadeSwarm
                     }
                 }
             },
-            SearchMethod::IDAStar(true) => {
-                println!("IDA*: ");
-                match jade_swarm.iterative_deepening_a_star() {
+            SearchMethod::IDAStarReached(true) => {
+                println!("IDA* With Reached: ");
+                match jade_swarm.iterative_deepening_a_star_with_reached() {
+                    Some(path) => {
+                        println!("{}", jade_swarm.write_results(path))
+                    }
+                    None => {
+                        println!("No IDA* solutions were found.")
+                    }
+                }
+            },
+            SearchMethod::IDAStarWithCycleChecking(true) => {
+                println!("IDA* With Cycle Checking: ");
+                match jade_swarm.iterative_deepening_a_star_with_cycle_checking() {
+                    Some(path) => {
+                        println!("{}", jade_swarm.write_results(path))
+                    }
+                    None => {
+                        println!("No IDA* solutions were found.")
+                    }
+                }
+            },
+            SearchMethod::IDAStarWithoutCycleChecking(true) => {
+                println!("IDA* Without Cycle Checking: ");
+                match jade_swarm.iterative_deepening_a_star_without_cycle_checking() {
                     Some(path) => {
                         println!("{}", jade_swarm.write_results(path))
                     }

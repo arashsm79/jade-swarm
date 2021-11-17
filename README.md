@@ -22,7 +22,7 @@ This repository contains the implementation of the following search algorithms i
 * Recursive Best First Search 
 
 ## Problem
-Jade Swarm is a game similar to Lights Out, with the deferences being that it has an extra color, and instead of being on a grid, it is the game is represented using an undirected graph.
+Jade Swarm is a game similar to Lights Out, with the deferences being that it has an extra color, and instead of being on a grid, the game is represented using an undirected graph.
 
 The game starts with a graph that has its vertices colored in either Red or Green or Black. The objective of the player is to change the color all the vertices to Green using the following actions:
 * Clicking on a green node causes all the non-black nodes around that node to change their colors from red to green or from green to red (a toggle).

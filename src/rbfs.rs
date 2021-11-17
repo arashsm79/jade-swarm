@@ -1,6 +1,5 @@
 use crate::problem::JadeSwarm;
 use crate::problem::Node;
-use crate::problem::RBFSNode;
 
 use std::collections::BinaryHeap;
 use std::rc::Rc;
@@ -15,9 +14,9 @@ impl JadeSwarm {
 * --------------------------------------
 */
     pub fn recursive_best_first_search(&self) -> Option<Vec<Node>> {
-        let g = |_node: &RBFSNode| -> i32 { 1 };
+        let g = |_node: &Node| -> i32 { 1 };
 
-        let initial_node = RBFSNode {
+        let initial_node = Node {
             state: self.initial_state.clone(),
             cost: 0,
             path_cost: 0,
@@ -26,10 +25,10 @@ impl JadeSwarm {
         };
 
         let (solution, _fvalue) = self.rbfs(initial_node, i32::MAX, g);
-        JadeSwarm::rbfs_trace_back_path(solution)
+        JadeSwarm::trace_back_path_with_parent(solution)
     }
 
-    fn rbfs_h(&self, node: &RBFSNode) -> i32 {
+    fn rbfs_h(&self, node: &Node) -> i32 {
             let x = f64::from(
                 node.state.config.len() as i32
                     - node.state.config.iter().filter(|&b| (*b) == true).count() as i32,
@@ -37,12 +36,12 @@ impl JadeSwarm {
             x.ceil() as i32
     }
 
-    fn rbfs_expand(&self, node: &RBFSNode, g: fn(&RBFSNode) -> i32) -> Vec<RBFSNode>
+    fn rbfs_expand(&self, node: &Node, g: fn(&Node) -> i32) -> Vec<Node>
     {
         let mut expanded_nodes = Vec::new();
         for i in 0..node.state.config.len() {
             if i != node.selected_node_id {
-                let next_node = RBFSNode {
+                let next_node = Node {
                     state: self.successor(&node.state, i),
                     cost: 0,
                     path_cost: 0,
@@ -50,7 +49,7 @@ impl JadeSwarm {
                     parent: Some(Rc::new((*node).clone()))
                 };
                 let path_cost = node.path_cost + g(&next_node);
-                expanded_nodes.push(RBFSNode {
+                expanded_nodes.push(Node {
                     path_cost,
                     cost: path_cost + self.rbfs_h(&next_node),
                     ..next_node
@@ -60,13 +59,13 @@ impl JadeSwarm {
         expanded_nodes
     }
 
-    fn rbfs(&self, node: RBFSNode, f_limit: i32,  g: fn(&RBFSNode) -> i32) -> (Option<RBFSNode>, i32)
+    fn rbfs(&self, node: Node, f_limit: i32,  g: fn(&Node) -> i32) -> (Option<Node>, i32)
     {
         if JadeSwarm::is_goal(&node.state) {
             return (Some(node), f_limit);
         }
 
-        let mut node_successors: BinaryHeap<RBFSNode> = BinaryHeap::new();
+        let mut node_successors: BinaryHeap<Node> = BinaryHeap::new();
 
         for mut child in self.rbfs_expand(&node, g) {
             child.cost = std::cmp::max(child.cost, node.cost);
@@ -89,46 +88,4 @@ impl JadeSwarm {
             }
         }
     }
-
-    fn rbfs_trace_back_path(
-        goal_node: Option<RBFSNode>,
-    ) -> Option<Vec<Node>> {
-        match goal_node {
-            Some(goal_node_unwrapped) => {
-                // The goal state was found
-                let mut path: Vec<Node> = Vec::new();
-                path.push(Node {
-                    state: goal_node_unwrapped.state,
-                    selected_node_id: goal_node_unwrapped.selected_node_id,
-                    cost: goal_node_unwrapped.cost,
-                    path_cost: goal_node_unwrapped.path_cost
-                });
-                let mut p = goal_node_unwrapped.parent;
-                loop {
-                    match p {
-                        Some(parent) => {
-                            // Node has a parent
-                            path.push(Node {
-                                state: parent.state.clone(),
-                                selected_node_id: parent.selected_node_id,
-                                cost: parent.cost,
-                                path_cost: parent.path_cost
-                            });
-                            p = parent.parent.clone();
-                        }
-                        None => {
-                            // Node doesn't a have a parent (we have reached the initial state)
-                            break;
-                        }
-                    }
-                }
-                return Some(path);
-            }
-            None => {
-                // No solutions were found
-                return None;
-            }
-        }
-    }
-
 }

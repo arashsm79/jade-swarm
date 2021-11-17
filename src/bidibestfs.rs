@@ -30,6 +30,7 @@ impl JadeSwarm {
         let initial_node_f = Node {
             state: self.initial_state.clone(),
             cost: 0,
+            parent: None,
             path_cost: 0,
             selected_node_id: 0,
         };
@@ -45,6 +46,7 @@ impl JadeSwarm {
             },
             cost: 0,
             path_cost: 0,
+            parent: None,
             selected_node_id: 0,
         };
         frontier_b.push(initial_node_b.clone());

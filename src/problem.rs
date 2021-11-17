@@ -1,7 +1,7 @@
 use core::hash::Hash;
 use std::rc::Rc;
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 impl JadeGraph {
     fn size(&self) -> usize {
@@ -77,6 +77,7 @@ pub struct State {
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Node {
     pub state: State,
+    pub parent: Option<Rc<Node>>,
     pub selected_node_id: usize, // which node on the previous state was selected that lead to this node with this state
     pub path_cost: i32,
     pub cost: i32,
@@ -89,27 +90,6 @@ impl Ord for Node {
 }
 
 impl PartialOrd for Node {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct RBFSNode {
-    pub state: State,
-    pub parent: Option<Rc<RBFSNode>>,
-    pub selected_node_id: usize, // which node on the previous state was selected that lead to this node with this state
-    pub path_cost: i32,
-    pub cost: i32,
-}
-
-impl Ord for RBFSNode {
-    fn cmp(&self, other: &Self) -> Ordering {
-        other.cost.cmp(&self.cost)
-    }
-}
-
-impl PartialOrd for RBFSNode {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
@@ -206,12 +186,15 @@ impl JadeSwarm {
     pub fn uninformed_expand(&self, node: &Node) -> Vec<Node> {
         let mut expanded_nodes = Vec::new();
         for i in 0..node.state.config.len() {
-            expanded_nodes.push(Node {
-                state: self.successor(&node.state, i),
-                cost: 0,
-                path_cost: 0,
-                selected_node_id: i,
-            })
+            if i != node.selected_node_id {
+                expanded_nodes.push(Node {
+                    state: self.successor(&node.state, i),
+                    cost: 0,
+                    path_cost: 0,
+                    selected_node_id: i,
+                    parent: Some(Rc::new((*node).clone()))
+                })
+            }
         }
         expanded_nodes
     }
@@ -222,18 +205,21 @@ impl JadeSwarm {
     {
         let mut expanded_nodes = Vec::new();
         for i in 0..node.state.config.len() {
-            let next_node = Node {
-                state: self.successor(&node.state, i),
-                cost: 0,
-                path_cost: 0,
-                selected_node_id: i,
-            };
-            let path_cost = node.path_cost + g(&next_node);
-            expanded_nodes.push(Node {
-                path_cost,
-                cost: path_cost + h(&next_node),
-                ..next_node
-            })
+            if i != node.selected_node_id {
+                let next_node = Node {
+                    state: self.successor(&node.state, i),
+                    cost: 0,
+                    path_cost: 0,
+                    selected_node_id: i,
+                    parent: Some(Rc::new((*node).clone()))
+                };
+                let path_cost = node.path_cost + g(&next_node);
+                expanded_nodes.push(Node {
+                    path_cost,
+                    cost: path_cost + h(&next_node),
+                    ..next_node
+                })
+            }
         }
         expanded_nodes
     }    
@@ -242,7 +228,60 @@ impl JadeSwarm {
         state.config.iter().filter(|&b| (*b) == true).count() == state.config.len()
     }
 
-    pub fn trace_back_path(
+    pub fn is_cycle(node: &Node) -> bool {
+        let mut reached_in_path: HashSet<State> = HashSet::new();
+        reached_in_path.insert(node.state.clone());
+        if let Some(p) = &node.parent {
+            let mut parent_node = p.clone();
+            loop {
+                if reached_in_path.contains(&parent_node.state) {
+                    return true
+                } else {
+                    reached_in_path.insert(p.state.clone());
+                }
+
+                if let Some(p) = &parent_node.parent {
+                    parent_node = p.clone();
+                } else {
+                    break;
+                }
+            }
+        }
+        false
+    }
+
+    pub fn trace_back_path_with_parent(
+        goal_node: Option<Node>,
+    ) -> Option<Vec<Node>> {
+        match goal_node {
+            Some(goal_node_unwrapped) => {
+                // The goal state was found
+                let mut path: Vec<Node> = Vec::new();
+                path.push(goal_node_unwrapped.clone());
+                let mut p = goal_node_unwrapped.parent;
+                loop {
+                    match p {
+                        Some(parent) => {
+                            // Node has a parent
+                            path.push((*parent).clone());
+                            p = parent.parent.clone();
+                        }
+                        None => {
+                            // Node doesn't a have a parent (we have reached the initial state)
+                            break;
+                        }
+                    }
+                }
+                return Some(path);
+            }
+            None => {
+                // No solutions were found
+                return None;
+            }
+        }
+    }
+
+    pub fn trace_back_path_with_reached(
         goal_node: Option<Node>,
         reached: HashMap<State, Option<Node>>,
     ) -> Option<Vec<Node>> {

@@ -22,6 +22,7 @@ impl JadeSwarm {
             state: self.initial_state.clone(),
             cost: 0,
             path_cost: 0,
+            parent: None,
             selected_node_id: 0,
         };
         let mut goal_node: Option<Node> = None;
@@ -55,6 +56,6 @@ impl JadeSwarm {
         }
 
         // Trace back path
-        JadeSwarm::trace_back_path(goal_node, reached)
+        JadeSwarm::trace_back_path_with_reached(goal_node, reached)
     }
 }
